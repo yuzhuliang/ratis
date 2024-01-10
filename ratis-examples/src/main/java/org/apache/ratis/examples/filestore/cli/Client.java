@@ -57,25 +57,26 @@ import java.util.concurrent.TimeUnit;
  */
 public abstract class Client extends SubCommandBase {
 
+  // 每一个文件的大小
   @Parameter(names = {"--size"}, description = "Size of each file in bytes", required = true)
   private long fileSizeInBytes;
-
+ // buffer容量
   @Parameter(names = {"--bufferSize"}, description = "Size of buffer in bytes, should less than 4MB, " +
       "i.e BUFFER_BYTE_LIMIT_DEFAULT", required = false)
   private int bufferSizeInBytes = 1024;
-
+  // 写入文件的数量
   @Parameter(names = {"--numFiles"}, description = "Number of files to be written", required = true)
   private int numFiles;
-
+  // 
   @Parameter(names = {"--numClients"}, description = "Number of clients to write", required = true)
   private int numClients;
-
+  // 存储的目录
   @Parameter(names = {"--storage", "-s"}, description = "Storage dir, eg. --storage dir1 --storage dir2",
       required = true)
   private List<File> storageDir = new ArrayList<>();
-
+  // 最大线程数
   private static final int MAX_THREADS_NUM = 1000;
-
+  //
   public int getNumThread() {
     return numFiles < MAX_THREADS_NUM ? numFiles : MAX_THREADS_NUM;
   }
@@ -96,9 +97,12 @@ public abstract class Client extends SubCommandBase {
   public void run() throws Exception {
     int raftSegmentPreallocatedSize = 1024 * 1024 * 1024;
     RaftProperties raftProperties = new RaftProperties();
+    // 设置Raft : 使用GRPC
     RaftConfigKeys.Rpc.setType(raftProperties, SupportedRpcType.GRPC);
+    // 设置GRPC
     GrpcConfigKeys.setMessageSizeMax(raftProperties,
         SizeInBytes.valueOf(raftSegmentPreallocatedSize));
+    // 设置RaftServer
     RaftServerConfigKeys.Log.Appender.setBufferByteLimit(raftProperties,
         SizeInBytes.valueOf(raftSegmentPreallocatedSize));
     RaftServerConfigKeys.Log.setWriteBufferSize(raftProperties,
@@ -107,14 +111,16 @@ public abstract class Client extends SubCommandBase {
         SizeInBytes.valueOf(raftSegmentPreallocatedSize));
     RaftServerConfigKeys.Log.setSegmentSizeMax(raftProperties,
         SizeInBytes.valueOf(1 * 1024 * 1024 * 1024L));
+    // 设置Raft : 
     RaftConfigKeys.DataStream.setType(raftProperties, SupportedDataStreamType.NETTY);
 
     RaftServerConfigKeys.Log.setSegmentCacheNumMax(raftProperties, 2);
 
+    // 设置RaftClient
     RaftClientConfigKeys.Rpc.setRequestTimeout(raftProperties,
         TimeDuration.valueOf(50000, TimeUnit.MILLISECONDS));
     RaftClientConfigKeys.Async.setOutstandingRequestsMax(raftProperties, 1000);
-
+    //
     for (File dir : storageDir) {
       FileUtils.createDirectories(dir);
     }
@@ -122,12 +128,12 @@ public abstract class Client extends SubCommandBase {
     operation(getClients(raftProperties));
   }
 
+  // 
   public List<FileStoreClient> getClients(RaftProperties raftProperties) {
     List<FileStoreClient> fileStoreClients = new ArrayList<>();
     for (int i = 0; i < numClients; i ++) {
       final RaftGroup raftGroup = RaftGroup.valueOf(RaftGroupId.valueOf(ByteString.copyFromUtf8(getRaftGroupId())),
           getPeers());
-
       RaftClient.Builder builder =
           RaftClient.newBuilder().setProperties(raftProperties);
       builder.setRaftGroup(raftGroup);
@@ -142,7 +148,7 @@ public abstract class Client extends SubCommandBase {
     return fileStoreClients;
   }
 
-
+  // 停止client
   @SuppressFBWarnings("DM_EXIT")
   protected void stop(List<FileStoreClient> clients) throws IOException {
     for (FileStoreClient client : clients) {
@@ -151,11 +157,13 @@ public abstract class Client extends SubCommandBase {
     System.exit(0);
   }
 
+  // 根据文件名获取文件的路径
   public String getPath(String fileName) {
     int hash = fileName.hashCode() % storageDir.size();
     return new File(storageDir.get(Math.abs(hash)), fileName).getAbsolutePath();
   }
 
+  // 
   protected void dropCache() {
     String[] cmds = {"/bin/sh","-c","echo 3 > /proc/sys/vm/drop_caches"};
     try {
@@ -166,6 +174,7 @@ public abstract class Client extends SubCommandBase {
     }
   }
 
+  // 异步写
   private CompletableFuture<Long> writeFileAsync(String path, ExecutorService executor) {
     final CompletableFuture<Long> future = new CompletableFuture<>();
     CompletableFuture.supplyAsync(() -> {
@@ -176,6 +185,8 @@ public abstract class Client extends SubCommandBase {
       }
       return future;
     }, executor);
+
+    // 
     return future;
   }
 
@@ -200,6 +211,7 @@ public abstract class Client extends SubCommandBase {
     return paths;
   }
 
+  // 
   protected long writeFile(String path, long fileSize, long bufferSize) throws IOException {
     final byte[] buffer = new byte[Math.toIntExact(bufferSize)];
     long offset = 0;
